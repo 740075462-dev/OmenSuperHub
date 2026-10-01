@@ -1,0 +1,43 @@
+name: Build OmenSuperHub
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # LibreHardwareMonitorLib 子项目为 SDK 风格，TargetFrameworks 含 net10.0，需要 .NET 10 SDK
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      # 老式 csproj (packages.config) 还原到 解决方案目录\packages\
+      - name: Restore NuGet packages
+        run: nuget restore OmenSuperHub.sln
+
+      - name: Build (Release x64)
+        run: msbuild OmenSuperHub.sln /p:Configuration=Release /p:Platform=x64 /p:RunCodeAnalysis=false /m /v:minimal
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmenSuperHub-Release-x64
+          path: |
+            bin/x64/Release/
+            Bin/Release/
+          if-no-files-found: warn
