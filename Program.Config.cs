@@ -730,6 +730,7 @@ namespace OmenSuperHub {
               key.SetValue("DataLocalize", dataLocalize);
               key.SetValue("AppLanguage", appLanguage);
               key.SetValue("AutoFanProtect", autoFanProtect);
+              key.SetValue("ExitAfterburner", exitAfterburner);
               key.SetValue("TppPower", tppPower);
               //key.SetValue("PL4Power", powerLimit4);
               key.SetValue("IccMax", iccMax);
@@ -874,6 +875,9 @@ namespace OmenSuperHub {
                   break;
                 case "AutoFanProtect":
                   key.SetValue("AutoFanProtect", autoFanProtect);
+                  break;
+                case "ExitAfterburner":
+                  key.SetValue("ExitAfterburner", exitAfterburner);
                   break;
               }
               if (configName == "FanTable" || configName == "FanControl" || configName == "TempSensitivity" || configName == "CpuPower" || configName == "TgpPower" || configName == "PpabPower" || configName == "DState" || configName == "GpuClock" || configName == "MaxFrameRate" || configName == "TppPower" || configName == "IccMax" || configName == "AcLoadLine" ||
@@ -1421,6 +1425,9 @@ namespace OmenSuperHub {
 
           autoFanProtect = (string)key.GetValue("AutoFanProtect", "on");
           UpdateCheckedState("autoFanProtectGroup", autoFanProtect == "on" ? Strings.FanAutoProtectOn : Strings.FanAutoProtectOff);
+
+          exitAfterburner = (string)key.GetValue("ExitAfterburner", "off");
+          UpdateCheckedState("exitAfterburnerGroup", exitAfterburner == "on" ? Strings.Enable : Strings.Disable);
 
           UpdateMonitorMetricCheckedStates();
 

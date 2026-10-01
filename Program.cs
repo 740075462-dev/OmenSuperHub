@@ -51,6 +51,22 @@ namespace OmenSuperHub {
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     static extern IntPtr GetModuleHandle(string lpModuleName);
 
+    // ── 顶层窗口枚举（用于向 MSI Afterburner 发送 WM_CLOSE）──────────────────
+    delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
+        uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+    const uint WM_CLOSE = 0x0010;
+    const uint SMTO_ABORTIFHUNG = 0x0002;
+
     // Shell_NotifyIconGetRect：获取托盘图标的屏幕矩形
     [StructLayout(LayoutKind.Sequential)]
     struct NOTIFYICONIDENTIFIER {
@@ -102,7 +118,7 @@ namespace OmenSuperHub {
     static int alreadyRead = 0, alreadyReadCode = 1000;
     static readonly string[] PresetOrder = { "PresetExtreme", "PresetGpuPriority", "PresetLightUse", "PresetCustom1", "PresetCustom2", "PresetCustom3" };
     static string currentPreset = "PresetCustom1", presetCustom1Name = Strings.PresetCustom1, presetCustom2Name = Strings.PresetCustom2, presetCustom3Name = Strings.PresetCustom3;
-    static string fanTable = "cool", fanControl = "auto", tempSensitivity = "high", tppPower = "null", iccMax = "null", acLoadline = "null", cpuPower = "null", tgpPower = "on", ppabPower = "on", dState = "normal", autoStart = "off", customIcon = "original", floatingBar = "off", floatingBarLoc = "left", floatingBarScreen = "", omenKey = OmenKeyActions.Default, omenKeyAppPath = "", omenKeyAppName = "", omenKeyShortcut = "", omenKeyPresetCandidates = "", dataLocalize = "off", appLanguage = "zh-CN", autoFanProtect = "on";
+    static string fanTable = "cool", fanControl = "auto", tempSensitivity = "high", tppPower = "null", iccMax = "null", acLoadline = "null", cpuPower = "null", tgpPower = "on", ppabPower = "on", dState = "normal", autoStart = "off", customIcon = "original", floatingBar = "off", floatingBarLoc = "left", floatingBarScreen = "", omenKey = OmenKeyActions.Default, omenKeyAppPath = "", omenKeyAppName = "", omenKeyShortcut = "", omenKeyPresetCandidates = "", dataLocalize = "off", appLanguage = "zh-CN", autoFanProtect = "on", exitAfterburner = "off";
     static volatile bool monitorFan = false;
     static bool skipCheckedUpdate = false; // action 内拦截时置 true，阻止 CreateMenuItem 覆盖勾选
     static bool showCPUTemp = true, showCPUPower = true, showCPUFrequency = false, showGPUTemp = true, showGPUPower = true, showGPUFrequency = false;
@@ -315,6 +331,18 @@ namespace OmenSuperHub {
 
         RestoreConfig();
         //Console.WriteLine($"4: {sw.ElapsedMilliseconds}ms");
+
+        // 启动 60 秒后检测并安全退出微星小飞机（勾选后每次启动都执行）
+        if (exitAfterburner == "on") {
+          Task.Run(async () => {
+            try {
+              await Task.Delay(TimeSpan.FromSeconds(60));
+              TryExitAfterburner();
+            } catch (Exception ex) {
+              Logger.Error($"[ExitAfterburner] 任务异常: {ex.Message}");
+            }
+          });
+        }
 
         if (alreadyRead != alreadyReadCode) {
           HelpForm.Instance.Show();
@@ -1534,6 +1562,86 @@ namespace OmenSuperHub {
       // 最终防线：即使未来格式化逻辑发生变化，也不允许 NotifyIcon.Text 超限。
       text = EllipsizeUnicode(text, NotifyIconTextLimit);
       trayIcon.Text = text;
+    }
+
+    // ── 启动 60 秒后检测并"安全退出"微星小飞机 ──────────────────────────────
+    // 小飞机（MSI Afterburner）为 x86 进程，主程序 Release 为 x64，无法用
+    // MainWindowHandle 可靠取得其窗口句柄，因此通过枚举顶层窗口 + 进程归属匹配来发送 WM_CLOSE。
+    static void TryExitAfterburner() {
+      // 主进程及关联进程（小飞机通常自动拉起 RTSS/RTSSHooksLoader）
+      string[] names = { "MSIAfterburner", "RTSS", "RTSSHooksLoader", "RTSSHooksLoader64" };
+
+      var targets = new List<Process>();
+      foreach (string name in names) {
+        Process[] procs;
+        try { procs = Process.GetProcessesByName(name); } catch { continue; }
+        foreach (var p in procs) targets.Add(p);
+      }
+
+      if (targets.Count == 0) {
+        Logger.Info("[ExitAfterburner] 未检测到微星小飞机在后台运行，无需退出。");
+        return;
+      }
+
+      Logger.Info($"[ExitAfterburner] 检测到微星小飞机在后台运行（{targets.Count} 个进程），尝试安全退出。");
+
+      // 收集目标进程 PID 集合，供窗口枚举匹配
+      var targetPids = new HashSet<uint>();
+      foreach (var p in targets) {
+        try { targetPids.Add((uint)p.Id); } catch { }
+      }
+
+      // ── 1. 温和关闭：向目标进程的所有顶层窗口发送 WM_CLOSE ──────────────
+      var closedWindows = new HashSet<IntPtr>();
+      try {
+        EnumWindows((hWnd, lParam) => {
+          uint pid;
+          GetWindowThreadProcessId(hWnd, out pid);
+          if (targetPids.Contains(pid)) {
+            try {
+              IntPtr result;
+              SendMessageTimeout(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero,
+                  SMTO_ABORTIFHUNG, 5000, out result);
+              closedWindows.Add(hWnd);
+            } catch { }
+          }
+          return true; // 继续枚举
+        }, IntPtr.Zero);
+      } catch (Exception ex) {
+        Logger.Error($"[ExitAfterburner] 枚举窗口失败: {ex.Message}");
+      }
+
+      // 兜底：对没找到主窗口的进程调用 CloseMainWindow
+      foreach (var p in targets) {
+        try {
+          if (!p.HasExited && p.MainWindowHandle == IntPtr.Zero)
+            p.CloseMainWindow();
+        } catch { }
+      }
+
+      // ── 2. 等待温和关闭生效 ────────────────────────────────────────────
+      System.Threading.Thread.Sleep(5000);
+
+      // ── 3. 超时未退出的进程强制结束 ────────────────────────────────────
+      int killed = 0;
+      foreach (var p in targets) {
+        try {
+          if (p.HasExited) continue;
+          Logger.Info($"[ExitAfterburner] 进程 {p.ProcessName}(PID {p.Id}) 未响应，强制结束。");
+          p.Kill();
+          p.WaitForExit(3000);
+          killed++;
+        } catch (Exception ex) {
+          Logger.Error($"[ExitAfterburner] 强制结束进程失败: {ex.Message}");
+        }
+      }
+
+      // ── 4. 释放句柄 ────────────────────────────────────────────────────
+      foreach (var p in targets) {
+        try { p.Dispose(); } catch { }
+      }
+
+      Logger.Info($"[ExitAfterburner] 退出完成：发送 WM_CLOSE {closedWindows.Count} 个窗口，强制结束 {killed} 个进程。");
     }
 
     static void Exit() {

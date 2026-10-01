@@ -549,6 +549,11 @@
     public static string IconDynamic => T("动态图标", "動態圖示", "Dynamic Icon");
     public static string DataLocalize => T("数据本地化", "資料本地化", "Data Localize");
     public static string AutoStart => T("开机自启", "開機自啟", "Autostart");
+    public static string ExitAfterburner => T("退出微星小飞机", "結束微星小飛機", "Exit MSI Afterburner");
+    public static string ExitAfterburnerTip => T(
+        "勾选后，软件启动60秒时若检测到微星小飞机在后台运行，将尝试安全退出它。",
+        "勾選後，軟體啟動60秒時若偵測到微星小飛機在後台執行，將嘗試安全結束它。",
+        "When enabled, 60 seconds after startup, MSI Afterburner will be safely closed if running.");
 
     // ─────────────────────────────────────────────────────────────────────────
     // 系统信息标签

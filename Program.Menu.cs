@@ -1468,6 +1468,18 @@ namespace OmenSuperHub {
         SaveConfig("DataLocalize");
       }, true));
       settingMenu.DropDownItems.Add(dataLocalizeMenu);
+      ToolStripMenuItem exitAfterburnerMenu = new ToolStripMenuItem(Strings.ExitAfterburner);
+      exitAfterburnerMenu.DropDownItems.Add(new ToolStripMenuItem(Strings.ExitAfterburnerTip) { Enabled = false });
+      exitAfterburnerMenu.DropDownItems.Add(new ToolStripSeparator());
+      exitAfterburnerMenu.DropDownItems.Add(CreateMenuItem(Strings.Enable, "exitAfterburnerGroup", (s, e) => {
+        exitAfterburner = "on";
+        SaveConfig("ExitAfterburner");
+      }, exitAfterburner == "on"));
+      exitAfterburnerMenu.DropDownItems.Add(CreateMenuItem(Strings.Disable, "exitAfterburnerGroup", (s, e) => {
+        exitAfterburner = "off";
+        SaveConfig("ExitAfterburner");
+      }, exitAfterburner == "off"));
+      settingMenu.DropDownItems.Add(exitAfterburnerMenu);
       ToolStripMenuItem autoStartMenu = new ToolStripMenuItem(Strings.AutoStart);
       autoStartMenu.DropDownItems.Add(CreateMenuItem(Strings.Enable, "autoStartGroup", (s, e) => {
         autoStart = "on";
